@@ -55,19 +55,19 @@ const CommentVotes: FC<CommentVotesProps> = ({
       });
     },
     onMutate: (type: VoteType) => {
-      // Snapshot pre-click state for rollback
       const previousVote = currentVoteRef.current;
       const previousVotesAmt = votesAmtRef.current;
 
-      if (currentVoteRef.current) {
-        // Has an existing vote (same or opposite) — always just remove it
-        const oldType = currentVoteRef.current.type;
+      if (currentVoteRef.current?.type === type) {
+        // Same direction — toggle off
         currentVoteRef.current = undefined;
         setCurrentVote(undefined);
-        if (oldType === "UP") votesAmtRef.current -= 1;
-        else if (oldType === "DOWN") votesAmtRef.current += 1;
+        if (type === "UP") votesAmtRef.current -= 1;
+        else if (type === "DOWN") votesAmtRef.current += 1;
       } else {
-        // No existing vote — add the clicked vote
+        // No vote or opposite vote — switch to new type
+        if (currentVoteRef.current?.type === "UP") votesAmtRef.current -= 1;
+        else if (currentVoteRef.current?.type === "DOWN") votesAmtRef.current += 1;
         currentVoteRef.current = { type };
         setCurrentVote({ type });
         if (type === "UP") votesAmtRef.current += 1;

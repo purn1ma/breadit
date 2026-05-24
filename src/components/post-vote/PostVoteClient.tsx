@@ -55,19 +55,19 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
       })
     },
     onMutate: (type: VoteType) => {
-      // Snapshot pre-click state for rollback
       const previousVote = currentVoteRef.current
       const previousVotesAmt = votesAmtRef.current
 
-      if (currentVoteRef.current) {
-        // Has an existing vote (same or opposite) — always just remove it
-        const oldType = currentVoteRef.current
+      if (currentVoteRef.current === type) {
+        // Same direction — toggle off
         currentVoteRef.current = undefined
         setCurrentVote(undefined)
-        if (oldType === 'UP') votesAmtRef.current -= 1
-        else if (oldType === 'DOWN') votesAmtRef.current += 1
+        if (type === 'UP') votesAmtRef.current -= 1
+        else if (type === 'DOWN') votesAmtRef.current += 1
       } else {
-        // No existing vote — add the clicked vote
+        // No vote or opposite vote — switch to new type
+        if (currentVoteRef.current === 'UP') votesAmtRef.current -= 1
+        else if (currentVoteRef.current === 'DOWN') votesAmtRef.current += 1
         currentVoteRef.current = type
         setCurrentVote(type)
         if (type === 'UP') votesAmtRef.current += 1

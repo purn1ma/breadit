@@ -42,16 +42,28 @@ export async function PATCH(req: Request) {
     }
 
     if (existingVote) {
-      // Always delete existing vote — same type = toggle off, opposite type = cancel only
-      // User must click again from neutral to add the opposite vote
-      await db.vote.delete({
-        where: {
-          userId_postId: {
-            postId,
-            userId: session.user.id,
+      if (existingVote.type === voteType) {
+        // Same direction — toggle off
+        await db.vote.delete({
+          where: {
+            userId_postId: {
+              postId,
+              userId: session.user.id,
+            },
           },
-        },
-      })
+        })
+      } else {
+        // Opposite direction — switch vote in one step
+        await db.vote.update({
+          where: {
+            userId_postId: {
+              postId,
+              userId: session.user.id,
+            },
+          },
+          data: { type: voteType },
+        })
+      }
 
       const votesAmt = post.votes
         .filter((vote) => vote.userId !== session.user.id)
@@ -67,7 +79,7 @@ export async function PATCH(req: Request) {
           content: JSON.stringify(post.content),
           id: post.id,
           title: post.title,
-          currentVote: null,
+          currentVote: existingVote.type === voteType ? null : voteType,
           createdAt: post.createdAt,
         }
 

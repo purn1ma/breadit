@@ -24,16 +24,28 @@ export async function PATCH(req: Request) {
     })
 
     if (existingVote) {
-      // Always delete existing vote — same type = toggle off, opposite type = cancel only
-      // User must click again from neutral to add the opposite vote
-      await db.commentVote.delete({
-        where: {
-          userId_commentId: {
-            commentId,
-            userId: session?.user.id,
+      if (existingVote.type === voteType) {
+        // Same direction — toggle off
+        await db.commentVote.delete({
+          where: {
+            userId_commentId: {
+              commentId,
+              userId: session?.user.id,
+            },
           },
-        },
-      })
+        })
+      } else {
+        // Opposite direction — switch vote in one step
+        await db.commentVote.update({
+          where: {
+            userId_commentId: {
+              commentId,
+              userId: session?.user.id,
+            },
+          },
+          data: { type: voteType },
+        })
+      }
       return new Response('OK')
     }
 
