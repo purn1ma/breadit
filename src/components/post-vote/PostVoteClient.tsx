@@ -6,7 +6,6 @@ import { FC, useEffect, useState } from 'react'
 import { Button } from '../ui/Button'
 import { ArrowBigDown, ArrowBigUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { usePrevious } from '@mantine/hooks'
 import { useMutation } from '@tanstack/react-query'
 import { PostVoteRequest } from '@/lib/validator/vote'
 import axios, { AxiosError } from 'axios'
@@ -22,13 +21,12 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
   const { loginToast } = useCustomToast()
   const [votesAmt, setVotesAmt] = useState(initialVotesAmt)
   const [currentVote, setCurrentVote] = useState(initialVote)
-  const prevVote = usePrevious(currentVote)
 
   useEffect(() => {
     setCurrentVote(initialVote)
   }, [initialVote])
 
-  const { mutate: vote } = useMutation({
+  const { mutate: vote, isLoading } = useMutation({
     mutationFn: async(voteType: VoteType) => {
       const payload: PostVoteRequest = {
         postId,
@@ -36,12 +34,10 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
       }
       await axios.patch('/api/subreddit/post/vote', payload)
     },
-    onError: (err, voteType) => {
-      if (voteType === 'UP') setVotesAmt((prev) => prev - 1)
-      else setVotesAmt((prev) => prev + 1)
-
-      // reset current vote
-      setCurrentVote(prevVote)
+    onError: (err, voteType, context: any) => {
+      // Roll back to the state before the optimistic update
+      setCurrentVote(context?.previousVote)
+      setVotesAmt(context?.previousVotesAmt ?? initialVotesAmt)
 
       if (err instanceof AxiosError) {
         if (err.response?.status === 401) {
@@ -55,8 +51,10 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
         variant: 'destructive',
       })
     },
-    // Usimg onMutate for optimistic updates
     onMutate: (type: VoteType) => {
+      const previousVote = currentVote
+      const previousVotesAmt = votesAmt
+
       if (currentVote === type) {
         // User is voting the same way again, so remove their vote
         setCurrentVote(undefined)
@@ -69,6 +67,8 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
         else if (type === 'DOWN')
           setVotesAmt((prev) => prev - (currentVote ? 2 : 1))
       }
+
+      return { previousVote, previousVotesAmt }
     },
   })
 
@@ -77,6 +77,7 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
       {/* Up Button */}
       <Button
         onClick={() => vote("UP")}
+        disabled={isLoading}
         size='sm'
         variant='ghost'
         aria-label='upvote'>
@@ -95,6 +96,7 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
       {/* Down Button */}
       <Button
         onClick={() => vote("DOWN")}
+        disabled={isLoading}
         size='sm'
         className={cn({
           'text-emerald-500': currentVote === 'DOWN',

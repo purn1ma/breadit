@@ -4,7 +4,6 @@ import { toast } from "@/hooks/use-toast";
 import { useCustomToast } from "@/hooks/use-custom-toast";
 import { cn } from "@/lib/utils";
 import { CommentVoteRequest } from "@/lib/validator/vote";
-import { usePrevious } from "@mantine/hooks";
 import { CommentVote, VoteType } from "@prisma/client";
 import { useMutation } from "@tanstack/react-query";
 import axios, { AxiosError } from "axios";
@@ -29,9 +28,8 @@ const CommentVotes: FC<CommentVotesProps> = ({
   const [currentVote, setCurrentVote] = useState<PartialVote | undefined>(
     _currentVote
   );
-  const prevVote = usePrevious(currentVote);
 
-  const { mutate: vote } = useMutation({
+  const { mutate: vote, isLoading } = useMutation({
     mutationFn: async (type: VoteType) => {
       const payload: CommentVoteRequest = {
         voteType: type,
@@ -40,12 +38,10 @@ const CommentVotes: FC<CommentVotesProps> = ({
 
       await axios.patch("/api/subreddit/post/comment/vote", payload);
     },
-    onError: (err, voteType) => {
-      if (voteType === "UP") setVotesAmt((prev) => prev - 1);
-      else setVotesAmt((prev) => prev + 1);
-
-      // reset current vote
-      setCurrentVote(prevVote);
+    onError: (err, voteType, context: any) => {
+      // Roll back to the state before the optimistic update
+      setCurrentVote(context?.previousVote);
+      setVotesAmt(context?.previousVotesAmt ?? _votesAmt);
 
       if (err instanceof AxiosError) {
         if (err.response?.status === 401) {
@@ -60,6 +56,9 @@ const CommentVotes: FC<CommentVotesProps> = ({
       });
     },
     onMutate: (type: VoteType) => {
+      const previousVote = currentVote;
+      const previousVotesAmt = votesAmt;
+
       if (currentVote?.type === type) {
         // User is voting the same way again, so remove their vote
         setCurrentVote(undefined);
@@ -72,6 +71,8 @@ const CommentVotes: FC<CommentVotesProps> = ({
         else if (type === "DOWN")
           setVotesAmt((prev) => prev - (currentVote ? 2 : 1));
       }
+
+      return { previousVote, previousVotesAmt };
     },
   });
 
@@ -80,6 +81,7 @@ const CommentVotes: FC<CommentVotesProps> = ({
       {/* upvote */}
       <Button
         onClick={() => vote("UP")}
+        disabled={isLoading}
         size="xs"
         variant="ghost"
         aria-label="upvote"
@@ -99,6 +101,7 @@ const CommentVotes: FC<CommentVotesProps> = ({
       {/* downvote */}
       <Button
         onClick={() => vote("DOWN")}
+        disabled={isLoading}
         size="xs"
         className={cn({
           "text-emerald-500": currentVote?.type === "DOWN",
