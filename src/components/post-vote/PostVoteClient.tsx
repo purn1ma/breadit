@@ -2,7 +2,7 @@
 
 import { useCustomToast } from '@/hooks/use-custom-toast'
 import { VoteType } from '@prisma/client'
-import { FC, useEffect, useState } from 'react'
+import { FC, useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { ArrowBigDown, ArrowBigUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -22,27 +22,30 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
   const [votesAmt, setVotesAmt] = useState(initialVotesAmt)
   const [currentVote, setCurrentVote] = useState(initialVote)
 
+  // Refs mirror state so onMutate always reads the latest values,
+  // not a stale closure from a previous render
+  const currentVoteRef = useRef(currentVote)
+  const votesAmtRef = useRef(votesAmt)
+
   useEffect(() => {
     setCurrentVote(initialVote)
+    currentVoteRef.current = initialVote
   }, [initialVote])
 
   const { mutate: vote, isLoading } = useMutation({
-    mutationFn: async(voteType: VoteType) => {
-      const payload: PostVoteRequest = {
-        postId,
-        voteType
-      }
+    mutationFn: async (voteType: VoteType) => {
+      const payload: PostVoteRequest = { postId, voteType }
       await axios.patch('/api/subreddit/post/vote', payload)
     },
     onError: (err, voteType, context: any) => {
-      // Roll back to the state before the optimistic update
+      // Roll back to exact pre-click state using saved context
+      currentVoteRef.current = context?.previousVote
       setCurrentVote(context?.previousVote)
+      votesAmtRef.current = context?.previousVotesAmt ?? initialVotesAmt
       setVotesAmt(context?.previousVotesAmt ?? initialVotesAmt)
 
       if (err instanceof AxiosError) {
-        if (err.response?.status === 401) {
-          return loginToast()
-        }
+        if (err.response?.status === 401) return loginToast()
       }
 
       return toast({
@@ -52,31 +55,40 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
       })
     },
     onMutate: (type: VoteType) => {
-      const previousVote = currentVote
-      const previousVotesAmt = votesAmt
+      // Snapshot pre-click state for rollback
+      const previousVote = currentVoteRef.current
+      const previousVotesAmt = votesAmtRef.current
 
-      if (currentVote === type) {
-        // User is voting the same way again, so remove their vote
+      if (currentVoteRef.current === type) {
+        // Same vote type — toggle off
+        currentVoteRef.current = undefined
         setCurrentVote(undefined)
-        if (type === 'UP') setVotesAmt((prev) => prev - 1)
-        else if (type === 'DOWN') setVotesAmt((prev) => prev + 1)
+        if (type === 'UP') {
+          votesAmtRef.current -= 1
+        } else if (type === 'DOWN') {
+          votesAmtRef.current += 1
+        }
       } else {
-        // User is voting in the opposite direction, so subtract 2
+        // New vote or switching direction
+        const hadVote = !!currentVoteRef.current
+        currentVoteRef.current = type
         setCurrentVote(type)
-        if (type === 'UP') setVotesAmt((prev) => prev + (currentVote ? 2 : 1))
-        else if (type === 'DOWN')
-          setVotesAmt((prev) => prev - (currentVote ? 2 : 1))
+        if (type === 'UP') {
+          votesAmtRef.current += hadVote ? 2 : 1
+        } else if (type === 'DOWN') {
+          votesAmtRef.current -= hadVote ? 2 : 1
+        }
       }
 
+      setVotesAmt(votesAmtRef.current)
       return { previousVote, previousVotesAmt }
     },
   })
 
   return (
     <div className='flex flex-col gap-4 sm:gap-0 pr-6 sm:w-20 pb-4 sm:pb-0'>
-      {/* Up Button */}
       <Button
-        onClick={() => vote("UP")}
+        onClick={() => vote('UP')}
         disabled={isLoading}
         size='sm'
         variant='ghost'
@@ -88,14 +100,12 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
         />
       </Button>
 
-      {/* Vote amt */}
       <p className='text-center py-2 font-medium text-sm text-zinc-900'>
         {votesAmt}
       </p>
 
-      {/* Down Button */}
       <Button
-        onClick={() => vote("DOWN")}
+        onClick={() => vote('DOWN')}
         disabled={isLoading}
         size='sm'
         className={cn({
@@ -109,7 +119,6 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
           })}
         />
       </Button>
-      
     </div>
   )
 }

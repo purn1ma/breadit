@@ -53,13 +53,14 @@ export async function PATCH(req: Request) {
           },
         })
 
-        // Recount using fresh votes after the deletion
-        const updatedVotes = await db.vote.findMany({ where: { postId } })
-        const votesAmt = updatedVotes.reduce((acc, vote) => {
-          if (vote.type === 'UP') return acc + 1
-          if (vote.type === 'DOWN') return acc - 1
-          return acc
-        }, 0)
+        // Exclude the deleted vote from post.votes to get the correct new count
+        const votesAmt = post.votes
+          .filter((vote) => vote.userId !== session.user.id)
+          .reduce((acc, vote) => {
+            if (vote.type === 'UP') return acc + 1
+            if (vote.type === 'DOWN') return acc - 1
+            return acc
+          }, 0)
 
         if (votesAmt >= CACHE_AFTER_UPVOTES) {
           const cachePayload: CachedPost = {
@@ -90,11 +91,11 @@ export async function PATCH(req: Request) {
         },
       })
 
-      // Recount using fresh votes after the update
-      const updatedVotes = await db.vote.findMany({ where: { postId } })
-      const votesAmt = updatedVotes.reduce((acc, vote) => {
-        if (vote.type === 'UP') return acc + 1
-        if (vote.type === 'DOWN') return acc - 1
+      // Substitute the updated vote type for the user's existing vote
+      const votesAmt = post.votes.reduce((acc, vote) => {
+        const type = vote.userId === session.user.id ? voteType : vote.type
+        if (type === 'UP') return acc + 1
+        if (type === 'DOWN') return acc - 1
         return acc
       }, 0)
 
@@ -123,13 +124,13 @@ export async function PATCH(req: Request) {
       },
     })
 
-    // Recount using fresh votes after the creation
-    const updatedVotes = await db.vote.findMany({ where: { postId } })
-    const votesAmt = updatedVotes.reduce((acc, vote) => {
-      if (vote.type === 'UP') return acc + 1
-      if (vote.type === 'DOWN') return acc - 1
-      return acc
-    }, 0)
+    // Add the new vote on top of the existing votes
+    const votesAmt =
+      post.votes.reduce((acc, vote) => {
+        if (vote.type === 'UP') return acc + 1
+        if (vote.type === 'DOWN') return acc - 1
+        return acc
+      }, 0) + (voteType === 'UP' ? 1 : -1)
 
     if (votesAmt >= CACHE_AFTER_UPVOTES) {
       const cachePayload: CachedPost = {

@@ -8,7 +8,7 @@ import { CommentVote, VoteType } from "@prisma/client";
 import { useMutation } from "@tanstack/react-query";
 import axios, { AxiosError } from "axios";
 import { ArrowBigDown, ArrowBigUp } from "lucide-react";
-import { FC, useState } from "react";
+import { FC, useRef, useState } from "react";
 
 interface CommentVotesProps {
   commentId: string;
@@ -25,28 +25,27 @@ const CommentVotes: FC<CommentVotesProps> = ({
 }) => {
   const { loginToast } = useCustomToast();
   const [votesAmt, setVotesAmt] = useState<number>(_votesAmt);
-  const [currentVote, setCurrentVote] = useState<PartialVote | undefined>(
-    _currentVote
-  );
+  const [currentVote, setCurrentVote] = useState<PartialVote | undefined>(_currentVote);
+
+  // Refs mirror state so onMutate always reads the latest values,
+  // not a stale closure from a previous render
+  const currentVoteRef = useRef(currentVote);
+  const votesAmtRef = useRef(votesAmt);
 
   const { mutate: vote, isLoading } = useMutation({
     mutationFn: async (type: VoteType) => {
-      const payload: CommentVoteRequest = {
-        voteType: type,
-        commentId,
-      };
-
+      const payload: CommentVoteRequest = { voteType: type, commentId };
       await axios.patch("/api/subreddit/post/comment/vote", payload);
     },
     onError: (err, voteType, context: any) => {
-      // Roll back to the state before the optimistic update
+      // Roll back to exact pre-click state using saved context
+      currentVoteRef.current = context?.previousVote;
       setCurrentVote(context?.previousVote);
+      votesAmtRef.current = context?.previousVotesAmt ?? _votesAmt;
       setVotesAmt(context?.previousVotesAmt ?? _votesAmt);
 
       if (err instanceof AxiosError) {
-        if (err.response?.status === 401) {
-          return loginToast();
-        }
+        if (err.response?.status === 401) return loginToast();
       }
 
       return toast({
@@ -56,29 +55,38 @@ const CommentVotes: FC<CommentVotesProps> = ({
       });
     },
     onMutate: (type: VoteType) => {
-      const previousVote = currentVote;
-      const previousVotesAmt = votesAmt;
+      // Snapshot pre-click state for rollback
+      const previousVote = currentVoteRef.current;
+      const previousVotesAmt = votesAmtRef.current;
 
-      if (currentVote?.type === type) {
-        // User is voting the same way again, so remove their vote
+      if (currentVoteRef.current?.type === type) {
+        // Same vote type — toggle off
+        currentVoteRef.current = undefined;
         setCurrentVote(undefined);
-        if (type === "UP") setVotesAmt((prev) => prev - 1);
-        else if (type === "DOWN") setVotesAmt((prev) => prev + 1);
+        if (type === "UP") {
+          votesAmtRef.current -= 1;
+        } else if (type === "DOWN") {
+          votesAmtRef.current += 1;
+        }
       } else {
-        // User is voting in the opposite direction, so subtract 2
+        // New vote or switching direction
+        const hadVote = !!currentVoteRef.current;
+        currentVoteRef.current = { type };
         setCurrentVote({ type });
-        if (type === "UP") setVotesAmt((prev) => prev + (currentVote ? 2 : 1));
-        else if (type === "DOWN")
-          setVotesAmt((prev) => prev - (currentVote ? 2 : 1));
+        if (type === "UP") {
+          votesAmtRef.current += hadVote ? 2 : 1;
+        } else if (type === "DOWN") {
+          votesAmtRef.current -= hadVote ? 2 : 1;
+        }
       }
 
+      setVotesAmt(votesAmtRef.current);
       return { previousVote, previousVotesAmt };
     },
   });
 
   return (
     <div className="flex gap-1">
-      {/* upvote */}
       <Button
         onClick={() => vote("UP")}
         disabled={isLoading}
@@ -93,12 +101,10 @@ const CommentVotes: FC<CommentVotesProps> = ({
         />
       </Button>
 
-      {/* score */}
       <p className="text-center py-2 px-1 font-medium text-xs text-zinc-900">
         {votesAmt}
       </p>
 
-      {/* downvote */}
       <Button
         onClick={() => vote("DOWN")}
         disabled={isLoading}
