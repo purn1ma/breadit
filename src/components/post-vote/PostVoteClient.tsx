@@ -2,7 +2,7 @@
 
 import { useCustomToast } from '@/hooks/use-custom-toast'
 import { VoteType } from '@prisma/client'
-import { FC, useEffect, useRef, useState } from 'react'
+import { FC, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { ArrowBigDown, ArrowBigUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,7 @@ import { useMutation } from '@tanstack/react-query'
 import { PostVoteRequest } from '@/lib/validator/vote'
 import axios, { AxiosError } from 'axios'
 import { toast } from '@/hooks/use-toast'
+import { useRouter } from 'next/navigation'
 
 interface PostVoteClientProps {
   postId: string
@@ -17,32 +18,33 @@ interface PostVoteClientProps {
   initialVote?: VoteType | null
 }
 
-const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initialVote}) => {
+const PostVoteClient: FC<PostVoteClientProps> = ({ postId, initialVotesAmt, initialVote }) => {
   const { loginToast } = useCustomToast()
-  const [votesAmt, setVotesAmt] = useState(initialVotesAmt)
+  const router = useRouter()
+
   const [currentVote, setCurrentVote] = useState(initialVote)
-
-  // Refs mirror state so onMutate always reads the latest values,
-  // not a stale closure from a previous render
   const currentVoteRef = useRef(currentVote)
-  const votesAmtRef = useRef(votesAmt)
 
-  useEffect(() => {
+  // Sync currentVote when initialVote prop changes (e.g. after session loads)
+  const [prevInitialVote, setPrevInitialVote] = useState(initialVote)
+  if (prevInitialVote !== initialVote) {
+    setPrevInitialVote(initialVote)
     setCurrentVote(initialVote)
     currentVoteRef.current = initialVote
-  }, [initialVote])
+  }
+
+  // Derive the displayed count: initial total ± the difference between current and initial vote
+  const contrib = (v: VoteType | null | undefined) => (v === 'UP' ? 1 : v === 'DOWN' ? -1 : 0)
+  const votesAmt = initialVotesAmt + contrib(currentVote) - contrib(initialVote)
 
   const { mutate: vote, isLoading } = useMutation({
     mutationFn: async (voteType: VoteType) => {
       const payload: PostVoteRequest = { postId, voteType }
       await axios.patch('/api/subreddit/post/vote', payload)
     },
-    onError: (err, voteType, context: any) => {
-      // Roll back to exact pre-click state using saved context
+    onError: (err, _voteType, context: any) => {
       currentVoteRef.current = context?.previousVote
       setCurrentVote(context?.previousVote)
-      votesAmtRef.current = context?.previousVotesAmt ?? initialVotesAmt
-      setVotesAmt(context?.previousVotesAmt ?? initialVotesAmt)
 
       if (err instanceof AxiosError) {
         if (err.response?.status === 401) return loginToast()
@@ -54,28 +56,23 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
         variant: 'destructive',
       })
     },
+    onSuccess: () => {
+      router.refresh()
+    },
     onMutate: (type: VoteType) => {
       const previousVote = currentVoteRef.current
-      const previousVotesAmt = votesAmtRef.current
 
       if (currentVoteRef.current === type) {
         // Same direction — toggle off
         currentVoteRef.current = undefined
         setCurrentVote(undefined)
-        if (type === 'UP') votesAmtRef.current -= 1
-        else if (type === 'DOWN') votesAmtRef.current += 1
       } else {
         // No vote or opposite vote — switch to new type
-        if (currentVoteRef.current === 'UP') votesAmtRef.current -= 1
-        else if (currentVoteRef.current === 'DOWN') votesAmtRef.current += 1
         currentVoteRef.current = type
         setCurrentVote(type)
-        if (type === 'UP') votesAmtRef.current += 1
-        else if (type === 'DOWN') votesAmtRef.current -= 1
       }
 
-      setVotesAmt(votesAmtRef.current)
-      return { previousVote, previousVotesAmt }
+      return { previousVote }
     },
   })
 
@@ -102,9 +99,6 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
         onClick={() => vote('DOWN')}
         disabled={isLoading}
         size='sm'
-        className={cn({
-          'text-emerald-500': currentVote === 'DOWN',
-        })}
         variant='ghost'
         aria-label='downvote'>
         <ArrowBigDown

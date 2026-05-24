@@ -9,6 +9,7 @@ import { useMutation } from "@tanstack/react-query";
 import axios, { AxiosError } from "axios";
 import { ArrowBigDown, ArrowBigUp } from "lucide-react";
 import { FC, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface CommentVotesProps {
   commentId: string;
@@ -20,29 +21,35 @@ type PartialVote = Pick<CommentVote, "type">;
 
 const CommentVotes: FC<CommentVotesProps> = ({
   commentId,
-  votesAmt: _votesAmt,
-  currentVote: _currentVote,
+  votesAmt: initialVotesAmt,
+  currentVote: initialVote,
 }) => {
   const { loginToast } = useCustomToast();
-  const [votesAmt, setVotesAmt] = useState<number>(_votesAmt);
-  const [currentVote, setCurrentVote] = useState<PartialVote | undefined>(_currentVote);
+  const router = useRouter();
 
-  // Refs mirror state so onMutate always reads the latest values,
-  // not a stale closure from a previous render
+  const [currentVote, setCurrentVote] = useState<PartialVote | undefined>(initialVote);
   const currentVoteRef = useRef(currentVote);
-  const votesAmtRef = useRef(votesAmt);
+
+  // Sync currentVote when initialVote prop changes (e.g. after router.refresh())
+  const [prevInitialVote, setPrevInitialVote] = useState(initialVote);
+  if (prevInitialVote?.type !== initialVote?.type) {
+    setPrevInitialVote(initialVote);
+    setCurrentVote(initialVote);
+    currentVoteRef.current = initialVote;
+  }
+
+  // Derive the displayed count: initial total ± the difference between current and initial vote
+  const contrib = (v: PartialVote | undefined) => (v?.type === "UP" ? 1 : v?.type === "DOWN" ? -1 : 0);
+  const votesAmt = initialVotesAmt + contrib(currentVote) - contrib(initialVote);
 
   const { mutate: vote, isLoading } = useMutation({
     mutationFn: async (type: VoteType) => {
       const payload: CommentVoteRequest = { voteType: type, commentId };
       await axios.patch("/api/subreddit/post/comment/vote", payload);
     },
-    onError: (err, voteType, context: any) => {
-      // Roll back to exact pre-click state using saved context
+    onError: (err, _voteType, context: any) => {
       currentVoteRef.current = context?.previousVote;
       setCurrentVote(context?.previousVote);
-      votesAmtRef.current = context?.previousVotesAmt ?? _votesAmt;
-      setVotesAmt(context?.previousVotesAmt ?? _votesAmt);
 
       if (err instanceof AxiosError) {
         if (err.response?.status === 401) return loginToast();
@@ -54,28 +61,23 @@ const CommentVotes: FC<CommentVotesProps> = ({
         variant: "destructive",
       });
     },
+    onSuccess: () => {
+      router.refresh();
+    },
     onMutate: (type: VoteType) => {
       const previousVote = currentVoteRef.current;
-      const previousVotesAmt = votesAmtRef.current;
 
       if (currentVoteRef.current?.type === type) {
         // Same direction — toggle off
         currentVoteRef.current = undefined;
         setCurrentVote(undefined);
-        if (type === "UP") votesAmtRef.current -= 1;
-        else if (type === "DOWN") votesAmtRef.current += 1;
       } else {
         // No vote or opposite vote — switch to new type
-        if (currentVoteRef.current?.type === "UP") votesAmtRef.current -= 1;
-        else if (currentVoteRef.current?.type === "DOWN") votesAmtRef.current += 1;
         currentVoteRef.current = { type };
         setCurrentVote({ type });
-        if (type === "UP") votesAmtRef.current += 1;
-        else if (type === "DOWN") votesAmtRef.current -= 1;
       }
 
-      setVotesAmt(votesAmtRef.current);
-      return { previousVote, previousVotesAmt };
+      return { previousVote };
     },
   });
 
@@ -103,9 +105,6 @@ const CommentVotes: FC<CommentVotesProps> = ({
         onClick={() => vote("DOWN")}
         disabled={isLoading}
         size="xs"
-        className={cn({
-          "text-emerald-500": currentVote?.type === "DOWN",
-        })}
         variant="ghost"
         aria-label="downvote"
       >
