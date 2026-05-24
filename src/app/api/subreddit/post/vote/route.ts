@@ -53,8 +53,9 @@ export async function PATCH(req: Request) {
           },
         })
 
-        // Recount the votes
-        const votesAmt = post.votes.reduce((acc, vote) => {
+        // Recount using fresh votes after the deletion
+        const updatedVotes = await db.vote.findMany({ where: { postId } })
+        const votesAmt = updatedVotes.reduce((acc, vote) => {
           if (vote.type === 'UP') return acc + 1
           if (vote.type === 'DOWN') return acc - 1
           return acc
@@ -70,7 +71,7 @@ export async function PATCH(req: Request) {
             createdAt: post.createdAt,
           }
 
-          await redis.hset(`post:${postId}`, cachePayload) // Store the post data as a hash
+          await redis.hset(`post:${postId}`, cachePayload)
         }
 
         return new Response('OK')
@@ -89,8 +90,9 @@ export async function PATCH(req: Request) {
         },
       })
 
-      // Recount the votes
-      const votesAmt = post.votes.reduce((acc, vote) => {
+      // Recount using fresh votes after the update
+      const updatedVotes = await db.vote.findMany({ where: { postId } })
+      const votesAmt = updatedVotes.reduce((acc, vote) => {
         if (vote.type === 'UP') return acc + 1
         if (vote.type === 'DOWN') return acc - 1
         return acc
@@ -106,7 +108,7 @@ export async function PATCH(req: Request) {
           createdAt: post.createdAt,
         }
 
-        await redis.hset(`post:${postId}`, cachePayload) // Store the post data as a hash
+        await redis.hset(`post:${postId}`, cachePayload)
       }
 
       return new Response('OK')
@@ -121,8 +123,9 @@ export async function PATCH(req: Request) {
       },
     })
 
-    // Recount the votes
-    const votesAmt = post.votes.reduce((acc, vote) => {
+    // Recount using fresh votes after the creation
+    const updatedVotes = await db.vote.findMany({ where: { postId } })
+    const votesAmt = updatedVotes.reduce((acc, vote) => {
       if (vote.type === 'UP') return acc + 1
       if (vote.type === 'DOWN') return acc - 1
       return acc
@@ -138,12 +141,12 @@ export async function PATCH(req: Request) {
         createdAt: post.createdAt,
       }
 
-      await redis.hset(`post:${postId}`, cachePayload) // Store the post data as a hash
+      await redis.hset(`post:${postId}`, cachePayload)
     }
 
     return new Response('OK')
   } catch (error) {
-    (error)
+    console.error(error)
     if (error instanceof z.ZodError) {
       return new Response('Invalid POST request data passed', { status: 422 })
     }

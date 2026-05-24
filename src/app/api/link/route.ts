@@ -8,7 +8,33 @@ export async function GET(req: Request) {
     return new Response('Invalid href', { status: 400 })
   }
 
-  const res = await axios.get(href)
+  // Only allow public http/https URLs — blocks internal IPs, localhost, and non-web schemes
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(href)
+  } catch {
+    return new Response('Invalid URL', { status: 400 })
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return new Response('Invalid URL', { status: 400 })
+  }
+
+  const hostname = parsedUrl.hostname
+  // Block localhost and private IP ranges
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname.startsWith('192.168.') ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('172.') ||
+    hostname === '169.254.169.254' // cloud metadata endpoint
+  ) {
+    return new Response('Invalid URL', { status: 400 })
+  }
+
+  const res = await axios.get(href, { timeout: 5000, maxContentLength: 500_000 })
 
   // Parse the HTML using regular expressions
   const titleMatch = res.data.match(/<title>(.*?)<\/title>/)

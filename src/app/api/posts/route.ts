@@ -25,8 +25,8 @@ export async function GET(req: Request) {
   try {
     const { limit, page, subredditName } = z
       .object({
-        limit: z.string(),
-        page: z.string(),
+        limit: z.coerce.number().int().positive(),
+        page: z.coerce.number().int().positive(),
         subredditName: z.string().nullish().optional(),
       })
       .parse({
@@ -54,8 +54,8 @@ export async function GET(req: Request) {
     }
 
     const posts = await db.post.findMany({
-      take: parseInt(limit),
-      skip: (parseInt(page) - 1) * parseInt(limit), // skip should start from 0 for page 1
+      take: limit,
+      skip: (page - 1) * limit,
       orderBy: {
         createdAt: 'desc',
       },
