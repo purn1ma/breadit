@@ -6,7 +6,7 @@ import { FC, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { ArrowBigDown, ArrowBigUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { PostVoteRequest } from '@/lib/validator/vote'
 import axios, { AxiosError } from 'axios'
 import { toast } from '@/hooks/use-toast'
@@ -21,6 +21,7 @@ interface PostVoteClientProps {
 const PostVoteClient: FC<PostVoteClientProps> = ({ postId, initialVotesAmt, initialVote }) => {
   const { loginToast } = useCustomToast()
   const router = useRouter()
+  const queryClient = useQueryClient()
 
   const [currentVote, setCurrentVote] = useState(initialVote)
   const currentVoteRef = useRef(currentVote)
@@ -58,6 +59,7 @@ const PostVoteClient: FC<PostVoteClientProps> = ({ postId, initialVotesAmt, init
     },
     onSuccess: () => {
       router.refresh()
+      queryClient.invalidateQueries(['infinite-query'])
     },
     onMutate: (type: VoteType) => {
       const previousVote = currentVoteRef.current
