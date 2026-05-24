@@ -42,62 +42,24 @@ export async function PATCH(req: Request) {
     }
 
     if (existingVote) {
-      // if vote type is the same as existing vote, delete the vote
-      if (existingVote.type === voteType) {
-        await db.vote.delete({
-          where: {
-            userId_postId: {
-              postId,
-              userId: session.user.id,
-            },
-          },
-        })
-
-        // Exclude the deleted vote from post.votes to get the correct new count
-        const votesAmt = post.votes
-          .filter((vote) => vote.userId !== session.user.id)
-          .reduce((acc, vote) => {
-            if (vote.type === 'UP') return acc + 1
-            if (vote.type === 'DOWN') return acc - 1
-            return acc
-          }, 0)
-
-        if (votesAmt >= CACHE_AFTER_UPVOTES) {
-          const cachePayload: CachedPost = {
-            authorUsername: post.author.username ?? '',
-            content: JSON.stringify(post.content),
-            id: post.id,
-            title: post.title,
-            currentVote: null,
-            createdAt: post.createdAt,
-          }
-
-          await redis.hset(`post:${postId}`, cachePayload)
-        }
-
-        return new Response('OK')
-      }
-
-      // if vote type is different, update the vote
-      await db.vote.update({
+      // Always delete existing vote — same type = toggle off, opposite type = cancel only
+      // User must click again from neutral to add the opposite vote
+      await db.vote.delete({
         where: {
           userId_postId: {
             postId,
             userId: session.user.id,
           },
         },
-        data: {
-          type: voteType,
-        },
       })
 
-      // Substitute the updated vote type for the user's existing vote
-      const votesAmt = post.votes.reduce((acc, vote) => {
-        const type = vote.userId === session.user.id ? voteType : vote.type
-        if (type === 'UP') return acc + 1
-        if (type === 'DOWN') return acc - 1
-        return acc
-      }, 0)
+      const votesAmt = post.votes
+        .filter((vote) => vote.userId !== session.user.id)
+        .reduce((acc, vote) => {
+          if (vote.type === 'UP') return acc + 1
+          if (vote.type === 'DOWN') return acc - 1
+          return acc
+        }, 0)
 
       if (votesAmt >= CACHE_AFTER_UPVOTES) {
         const cachePayload: CachedPost = {
@@ -105,7 +67,7 @@ export async function PATCH(req: Request) {
           content: JSON.stringify(post.content),
           id: post.id,
           title: post.title,
-          currentVote: voteType,
+          currentVote: null,
           createdAt: post.createdAt,
         }
 

@@ -59,25 +59,19 @@ const PostVoteClient: FC<PostVoteClientProps> = ({postId, initialVotesAmt, initi
       const previousVote = currentVoteRef.current
       const previousVotesAmt = votesAmtRef.current
 
-      if (currentVoteRef.current === type) {
-        // Same vote type — toggle off
+      if (currentVoteRef.current) {
+        // Has an existing vote (same or opposite) — always just remove it
+        const oldType = currentVoteRef.current
         currentVoteRef.current = undefined
         setCurrentVote(undefined)
-        if (type === 'UP') {
-          votesAmtRef.current -= 1
-        } else if (type === 'DOWN') {
-          votesAmtRef.current += 1
-        }
+        if (oldType === 'UP') votesAmtRef.current -= 1
+        else if (oldType === 'DOWN') votesAmtRef.current += 1
       } else {
-        // New vote or switching direction
-        const hadVote = !!currentVoteRef.current
+        // No existing vote — add the clicked vote
         currentVoteRef.current = type
         setCurrentVote(type)
-        if (type === 'UP') {
-          votesAmtRef.current += hadVote ? 2 : 1
-        } else if (type === 'DOWN') {
-          votesAmtRef.current -= hadVote ? 2 : 1
-        }
+        if (type === 'UP') votesAmtRef.current += 1
+        else if (type === 'DOWN') votesAmtRef.current -= 1
       }
 
       setVotesAmt(votesAmtRef.current)

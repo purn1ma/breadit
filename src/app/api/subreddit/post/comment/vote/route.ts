@@ -24,32 +24,17 @@ export async function PATCH(req: Request) {
     })
 
     if (existingVote) {
-      // if vote type is the same as existing vote, delete the vote
-      if (existingVote.type === voteType) {
-        await db.commentVote.delete({
-          where: {
-            userId_commentId: {
-              commentId,
-              userId: session?.user.id,
-            },
+      // Always delete existing vote — same type = toggle off, opposite type = cancel only
+      // User must click again from neutral to add the opposite vote
+      await db.commentVote.delete({
+        where: {
+          userId_commentId: {
+            commentId,
+            userId: session?.user.id,
           },
-        })
-        return new Response('OK')
-      } else {
-        // if vote type is different, update the vote
-        await db.commentVote.update({
-          where: {
-            userId_commentId: {
-              commentId,
-              userId: session?.user.id,
-            },
-          },
-          data: {
-            type: voteType,
-          },
-        })
-        return new Response('OK')
-      }
+        },
+      })
+      return new Response('OK')
     }
 
     // if no existing vote, create a new vote
